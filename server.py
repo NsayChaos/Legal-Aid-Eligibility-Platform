@@ -180,7 +180,7 @@ class Handler(SimpleHTTPRequestHandler):
   path=unquote(parsed.path)
   # Expose only public assets, never database, source code, tests, or repository metadata.
   target=ROOT/path.lstrip('/')
-  allowed={'/','/index.html','/workspace.html','/system.html','/style.css','/workspace-theme.css','/landing.css','/system.css','/app.js','/landing.js','/impact.js','/system.js','/favicon.svg','/map.js','/paper.pdf'}
+  allowed={'/','/index.html','/workspace.html','/system.html','/style.css','/workspace-theme.css','/landing.css','/system.css','/app.js','/landing.js','/impact.js','/system.js','/favicon.svg','/logo.svg','/map.js','/paper.pdf'}
   if path not in allowed:return self.json({'error':'Not found'},404)
   return super().do_GET()
  def do_HEAD(self):
