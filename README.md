@@ -13,6 +13,7 @@ Open http://127.0.0.1:8766. The server binds to this computer only.
 
 ## Working features
 - Landing page: orange/rose glass masthead, globe identity, scroll transitions, interactive intake/research/referral demonstrations, jurisdiction map, capacity scenarios, and pilot brief downloads.
+- Case management (`system.html`): create/edit de-identified matters, assign branch and owner, track stages, manual due dates and notes, search and filter. No deadline computation or reminder delivery.
 - Operations (`system.html`): society and branch filters, aggregate CSV import, operational comparisons, report downloads, saved internal policy drafts, and an activity log.
 - Public research: refresh three approved LSC sources, store text snapshots, compare versions, and acknowledge individual change reviews. Optional six-hour refresh runs while the server and computer remain awake. Fetch failures remain visible.
 - Research and applicant tools (`workspace.html`): synthetic court-data analysis, anonymized CSV import, applicant preparation checklists, exports, and the supplied research paper.

@@ -32,6 +32,7 @@ def init_db(db):
  Path(db).parent.mkdir(parents=True,exist_ok=True)
  with connection(db) as c:
   c.executescript('''
+  CREATE TABLE IF NOT EXISTS matters(id INTEGER PRIMARY KEY,society TEXT,title TEXT,branch_id TEXT,owner TEXT,stage TEXT,due TEXT,notes TEXT,updated_at TEXT);
   CREATE TABLE IF NOT EXISTS metric_rows(society TEXT,branch_id TEXT,period TEXT,intakes INTEGER,completed INTEGER,staff_minutes REAL,recontacts INTEGER,referrals INTEGER,accepted_referrals INTEGER,origin TEXT,updated_at TEXT,PRIMARY KEY(society,branch_id,period));
   CREATE TABLE IF NOT EXISTS sources(id TEXT PRIMARY KEY,title TEXT,url TEXT,scope TEXT,last_checked TEXT,last_error TEXT);
   CREATE TABLE IF NOT EXISTS snapshots(id INTEGER PRIMARY KEY,source_id TEXT,hash TEXT,text TEXT,created_at TEXT);
@@ -74,6 +75,29 @@ def import_metrics(db,society,rows):
   for r in rows:c.execute('INSERT OR REPLACE INTO metric_rows VALUES(?,?,?,?,?,?,?,?,?,?,?)',(society,r['branch_id'],r['period'],r['intakes'],r['completed'],r['staff_minutes'],r['recontacts'],r['referrals'],r['accepted_referrals'],'User imported',now()))
   c.execute('INSERT INTO audit(society,action,detail,created_at) VALUES(?,?,?,?)',(society,'metrics_import',f'{len(rows)} branch-month rows imported',now()))
  return len(rows)
+
+def save_matter(db,society,body):
+ society_check(society)
+ values=[]
+ for key,limit in [('title',120),('branch_id',60),('owner',80),('stage',30),('due',10),('notes',5000)]:
+  value=body.get(key,'')
+  if not isinstance(value,str) or len(value)>limit:raise ValueError('Invalid '+key)
+  values.append(value.strip())
+ title,branch,owner,stage,due,notes=values
+ if len(title)<3:raise ValueError('Use a matter title of at least 3 characters.')
+ if branch not in {b['id'] for b in BRANCHES if b['society']==society}:raise ValueError('Branch does not belong to society.')
+ if stage not in ['Intake','Review','Active','Closed']:raise ValueError('Invalid stage.')
+ if due:
+  if not re.fullmatch(r'\d{4}-\d{2}-\d{2}',due):raise ValueError('Use YYYY-MM-DD.')
+  datetime.date.fromisoformat(due)
+ mid=body.get('id')
+ with connection(db) as c:
+  if mid is not None:
+   if type(mid) is not int or not c.execute('SELECT id FROM matters WHERE id=? AND society=?',(mid,society)).fetchone():raise ValueError('Matter not found in this society.')
+   c.execute('UPDATE matters SET title=?,branch_id=?,owner=?,stage=?,due=?,notes=?,updated_at=? WHERE id=? AND society=?',(*values,now(),mid,society))
+  else:mid=c.execute('INSERT INTO matters(society,title,branch_id,owner,stage,due,notes,updated_at) VALUES(?,?,?,?,?,?,?,?)',(society,*values,now())).lastrowid
+  c.execute('INSERT INTO audit(society,action,detail,created_at) VALUES(?,?,?,?)',(society,'matter_saved',f'Matter {mid} saved; stage {stage}',now()))
+ return mid
 
 def validate_source_url(url):
  p=urlparse(url)
@@ -138,11 +162,12 @@ def bootstrap(db,society):
  with connection(db) as c:
   sources=[dict(r) for r in c.execute('SELECT s.*, (SELECT count(*) FROM snapshots n WHERE n.source_id=s.id) AS versions FROM sources s')]
   reviews=[dict(r) for r in c.execute('SELECT r.*,s.title,s.url FROM source_reviews r JOIN sources s ON s.id=r.source_id ORDER BY r.id DESC LIMIT 30')]
+  matters=[dict(r) for r in c.execute('SELECT * FROM matters WHERE society=? ORDER BY updated_at DESC,id DESC',(society,))]
   policies=[dict(r) for r in c.execute('SELECT * FROM policies WHERE society=? ORDER BY id DESC',(society,))]
   jobs=[dict(r) for r in c.execute('SELECT * FROM jobs ORDER BY id DESC LIMIT 5')]
   audit=[dict(r) for r in c.execute('SELECT * FROM audit WHERE society=? ORDER BY id DESC LIMIT 15',(society,))]
   auto=c.execute("SELECT value FROM settings WHERE key='auto_refresh'").fetchone()[0]=='true'
- return {'societies':SOCIETIES,'branches':[b for b in BRANCHES if b['society']==society],'metrics':metrics(db,society),'sources':sources,'reviews':reviews,'policies':policies,'jobs':jobs,'audit':audit,'auto_refresh':auto,'localPrototype':True}
+ return {'matters':matters,'societies':SOCIETIES,'branches':[b for b in BRANCHES if b['society']==society],'metrics':metrics(db,society),'sources':sources,'reviews':reviews,'policies':policies,'jobs':jobs,'audit':audit,'auto_refresh':auto,'localPrototype':True}
 
 def scheduler(db):
  while True:
@@ -195,6 +220,7 @@ class Handler(SimpleHTTPRequestHandler):
    length=int(self.headers.get('Content-Length','0'))
    if length<1 or length>2_000_000:raise ValueError('Request must be 1 byte to 2 MB.')
    body=json.loads(self.rfile.read(length));path=urlparse(self.path).path;society=body.get('society','pilot');society_check(society)
+   if path=='/api/matters':return self.json({'id':save_matter(self.server.db,society,body)})
    if path=='/api/metrics/import':return self.json({'imported':import_metrics(self.server.db,society,body.get('rows'))})
    if path=='/api/research/refresh':return self.json({'job':start_refresh(self.server.db),'message':'Refresh started or already running.'})
    if path=='/api/settings':

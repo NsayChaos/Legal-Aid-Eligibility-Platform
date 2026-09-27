@@ -26,6 +26,23 @@ class SystemTests(unittest.TestCase):
   with server.connection(self.db) as c:self.assertEqual(c.execute('select count(*) from source_reviews').fetchone()[0],1)
   server.record_snapshot(self.db,'lsc-intake','Changed source '*30)
   with server.connection(self.db) as c:self.assertEqual(c.execute('select count(*) from source_reviews').fetchone()[0],2)
+ def test_matter_create_update_persist_and_scope(self):
+  body={'title':'Demo housing matter','branch_id':'north','owner':'Intake team','stage':'Intake','due':'2026-10-01','notes':'Fictional preparation note'}
+  mid=server.save_matter(self.db,'pilot',body)
+  self.assertEqual(server.bootstrap(self.db,'pilot')['matters'][0]['id'],mid)
+  self.assertEqual(server.bootstrap(self.db,'partner')['matters'],[])
+  body.update(id=mid,stage='Closed')
+  server.save_matter(self.db,'pilot',body)
+  server.init_db(self.db)
+  self.assertEqual(server.bootstrap(self.db,'pilot')['matters'][0]['stage'],'Closed')
+  body['branch_id']='partner-main'
+  with self.assertRaises(ValueError):server.save_matter(self.db,'partner',body)
+ def test_invalid_matter_date_and_stage(self):
+  body={'title':'Demo matter','branch_id':'north','stage':'Active','due':'2026-02-30'}
+  with self.assertRaises(ValueError):server.save_matter(self.db,'pilot',body)
+  body.update(due='',stage='Automatic approval')
+  with self.assertRaises(ValueError):server.save_matter(self.db,'pilot',body)
+  self.assertEqual(server.bootstrap(self.db,'pilot')['matters'],[])
  def test_unknown_society_rejected(self):
   with self.assertRaises(ValueError):server.metrics(self.db,'unknown')
 if __name__=='__main__':unittest.main()
